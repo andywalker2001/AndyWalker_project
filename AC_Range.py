@@ -3,6 +3,7 @@ import re
 import itertools
 import time
 import ast
+import folium
 from collections import defaultdict
 from functools import reduce
 from operator import or_
@@ -19,8 +20,11 @@ default = {
     "latitude": 50.827276295494734,
     "longitude": 0.2060202678627942,
     "altitude": 50.00,
-    "frame_delay": 5
+    "frame_delay": .1
 }
+
+# Create the map object
+my_map = folium.Map(location=[default["latitude"], default["longitude"]], zoom_start=7)
 
 range_0 = Myfuncs.calculate_radar_range(rcs_sqm=1)
 range_10 = Myfuncs.calculate_radar_range(rcs_sqm=10)
@@ -53,7 +57,7 @@ while True:
             longitude=default["longitude"]
             altitude=default["altitude"]
 
-    my_map = Myfuncs.plot_map (latitude, longitude, range_10, range_20, range_30)
+    my_map = Myfuncs.plot_map (latitude, longitude, range_10, range_20, range_30, my_map)
 
     r_list = Myfuncs.filter_list(r)
     for i in range(len(r_list)):

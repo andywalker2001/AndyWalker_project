@@ -151,7 +151,7 @@ def call_api(latitude, longitude, altitude, limit_range="27", units="M"):
         print(f"API request failed with status code: {response.status_code}")
         return None
 
-def plot_map (latitude, longitude, range_10, range_20, range_30):
+def plot_map (latitude, longitude, range_10, range_20, range_30, my_map):
     """
     Plots the radar range circles on a map using Folium.
     
@@ -168,9 +168,6 @@ def plot_map (latitude, longitude, range_10, range_20, range_30):
     """
     # Define coordinates (Latitude, Longitude) for the center
     center_coordinates = [latitude, longitude]
-    
-    # Create the map object
-    my_map = folium.Map(location=center_coordinates, zoom_start=7)
     
     # Add a Circle for the radar location
     folium.Circle(
@@ -229,12 +226,22 @@ def plot_plane (coord1, coord2, my_map, description, col = "blue"):
     points = [coord1, coord2]
     
     # Create the line layer and add it to the map
-    folium.PolyLine(
-        locations=points,
-        color=col,       # Line color
-        weight=3,           # Line thickness in pixels
-        opacity=0.8,        # Line transparency
-        tooltip=custom_string # Hover text
+#    folium.PolyLine(
+#        locations=points,
+#        color=col,       # Line color
+#        weight=3,           # Line thickness in pixels
+#        opacity=0.8,        # Line transparency
+#        tooltip=custom_string # Hover text
+#    ).add_to(my_map)
+
+    folium.Circle(
+        location=coord2,
+        radius=20,            # Radius explicitly set in meters
+        color="green",
+        fill=True,
+        fill_color="green",
+        fill_opacity=0.3,
+        popup=custom_string # Hover text
     ).add_to(my_map)
 
     my_map.save(r"./Data/interactive_map.html")

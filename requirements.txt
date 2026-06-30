@@ -7,3 +7,5 @@ pyserial
 pynmea2
 geopy
 openmeteo-requests
+streamlit
+streamlit-autorefresh
