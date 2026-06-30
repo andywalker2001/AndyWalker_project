@@ -298,3 +298,19 @@ def get_masking(coord1, coord2, num_segments):
     except:
         #It's actually not that bad to return an incorrect False, it just means we look for a plane we can't sense
         return ([False])
+
+def filter_list(r):
+    r_list = r["ac"] #Extract the list of aircraft from the API response
+
+    keys_to_keep = {"lat", "lon", "alt_geom", "flight"} #Only keep the keys we need for plotting and range calculations
+    filtered_r = [{k: v for k, v in d.items() if k in keys_to_keep} for d in r_list]
+    really_filtered_r = [
+        d for d in filtered_r #Only keep entries that have the "alt_geom" key, since we need altitude for range calculations
+        if "alt_geom" in d
+        ]
+    r_list = really_filtered_r #Update r_list to only include the filtered entries
+
+    with open(r"./Data/output.txt", "w") as g:
+        print(r_list, file=g) #Write the filtered list of aircraft to a file for debugging purposes
+        
+    return (r_list)
