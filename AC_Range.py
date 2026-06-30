@@ -19,7 +19,7 @@ default = {
     "latitude": 50.827276295494734,
     "longitude": 0.2060202678627942,
     "altitude": 50.00,
-    "frame_delay": 2
+    "frame_delay": 5
 }
 
 range_0 = Myfuncs.calculate_radar_range(rcs_sqm=1)
