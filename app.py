@@ -5,27 +5,18 @@ import Myfuncs
 app = Flask(__name__)
 
 # Defaults (from AC_Range.py)
-defaults = {
-    "live": True,
-    "range_limit": 50,
-    "latitude": 50.827276295494734,
-    "longitude": 0.2060202678627942,
-    "altitude": 50.00,
-}
+defaults = Myfuncs.set_location("COM5")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "Data")
 MAP_PATH = os.path.join(DATA_DIR, "interactive_map.html")
-
 
 @app.route("/")
 def index():
     return render_template("index.html", defaults=defaults)
 
-
 @app.route("/defaults", methods=["GET"])
 def get_defaults():
     return jsonify(defaults)
-
 
 @app.route("/update", methods=["POST"])
 def update():
@@ -55,7 +46,6 @@ def update():
     except Exception as exc:
         return jsonify({"status": "error", "error": str(exc)}), 500
 
-
 @app.route("/map")
 def map_view():
     # Serve the generated folium map
@@ -63,7 +53,6 @@ def map_view():
         return send_file(MAP_PATH)
     else:
         return "Map not generated yet. Press Update.", 404
-
 
 @app.route('/map_ts')
 def map_timestamp():
@@ -73,7 +62,6 @@ def map_timestamp():
         return jsonify({"ts": ts})
     else:
         return jsonify({"ts": 0})
-
 
 if __name__ == "__main__":
     app.run(debug=True)
