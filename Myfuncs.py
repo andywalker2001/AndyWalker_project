@@ -151,7 +151,7 @@ def call_api(latitude, longitude, altitude, limit_range="27", units="M"):
         print(f"API request failed with status code: {response.status_code}")
         return None
 
-def plot_map (latitude, longitude, range_10, range_20, range_30):
+def plot_map (latitude, longitude, range_10, range_20, range_30, my_map):
     """
     Plots the radar range circles on a map using Folium.
     
@@ -168,9 +168,6 @@ def plot_map (latitude, longitude, range_10, range_20, range_30):
     """
     # Define coordinates (Latitude, Longitude) for the center
     center_coordinates = [latitude, longitude]
-    
-    # Create the map object
-    my_map = folium.Map(location=center_coordinates, zoom_start=7)
     
     # Add a Circle for the radar location
     folium.Circle(
@@ -211,7 +208,7 @@ def plot_map (latitude, longitude, range_10, range_20, range_30):
 
     return(my_map)
 
-def plot_plane (coord1, coord2, my_map, description):
+def plot_plane (coord1, coord2, my_map, description, col = "blue"):
     """
     Plots a line on an existing map using Folium that is the vector from the sensor to the plane
     
@@ -224,17 +221,27 @@ def plot_plane (coord1, coord2, my_map, description):
     Nothing. Updates an interactive map called "interactive_map.html".
     """
     custom_string = "<br>".join(f"{k}={v}" for k, v in description.items())
-
+    
     # Group the two points into a list for PolyLine
     points = [coord1, coord2]
     
     # Create the line layer and add it to the map
-    folium.PolyLine(
-        locations=points,
-        color="blue",       # Line color
-        weight=3,           # Line thickness in pixels
-        opacity=0.8,        # Line transparency
-        tooltip=custom_string # Hover text
+#    folium.PolyLine(
+#        locations=points,
+#        color=col,       # Line color
+#        weight=3,           # Line thickness in pixels
+#        opacity=0.8,        # Line transparency
+#        tooltip=custom_string # Hover text
+#    ).add_to(my_map)
+
+    folium.Circle(
+        location=coord2,
+        radius=20,            # Radius explicitly set in meters
+        color=col,
+        fill=True,
+        fill_color=col,
+        fill_opacity=0.3,
+        popup=custom_string # Hover text
     ).add_to(my_map)
 
     my_map.save(r"./Data/interactive_map.html")
@@ -268,7 +275,7 @@ def get_masking(coord1, coord2, num_segments):
         lats.append(current_lat)
         lons.append(current_lon)
         alts.append(current_alt)
-        
+    
     openmeteo = openmeteo_requests.Client()
 
     url = "https://api.open-meteo.com/v1/forecast"
@@ -279,19 +286,38 @@ def get_masking(coord1, coord2, num_segments):
     	"current": ["temperature_2m", "relative_humidity_2m"],
     }
 
-    responses = openmeteo.weather_api(url, params=params)
+    try:
+        responses = openmeteo.weather_api(url, params=params)
 
-    terrain_masked = []
+        terrain_masked = []
 
-# Process current data. The order of variables needs to be the same as requested.
-    for i, response in enumerate(responses):
-        current = response.Current()
-        current_temperature_2m = current.Variables(0).Value()
-        current_relative_humidity_2m = current.Variables(1).Value()
-        if response.Elevation() < alts[i]:
-            terrain_masked.append(False)
-        else:
-            terrain_masked.append(True)
+    # Process current data. The order of variables needs to be the same as requested.
+        for i, response in enumerate(responses):
+            current = response.Current()
+            #current_temperature_2m = current.Variables(0).Value()
+            #current_relative_humidity_2m = current.Variables(1).Value()
+            if response.Elevation() < alts[i]:
+                terrain_masked.append(False)
+            else:
+                terrain_masked.append(True)
+
+        return (terrain_masked)
+    except:
+        #It's actually not that bad to return an incorrect False, it just means we look for a plane we can't sense
+        return ([False])
+
+def filter_list(r):
+    r_list = r["ac"] #Extract the list of aircraft from the API response
+
+    keys_to_keep = {"lat", "lon", "alt_geom", "flight"} #Only keep the keys we need for plotting and range calculations
+    filtered_r = [{k: v for k, v in d.items() if k in keys_to_keep} for d in r_list]
+    really_filtered_r = [
+        d for d in filtered_r #Only keep entries that have the "alt_geom" key, since we need altitude for range calculations
+        if "alt_geom" in d
+        ]
+    r_list = really_filtered_r #Update r_list to only include the filtered entries
+
+    with open(r"./Data/output.txt", "w") as g:
+        print(r_list, file=g) #Write the filtered list of aircraft to a file for debugging purposes
         
-    return (terrain_masked, current.Time())
-
+    return (r_list)
