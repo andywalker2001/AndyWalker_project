@@ -44,7 +44,10 @@ while True:
             altitude=default["altitude"]
             r_str = f.read()
             r = ast.literal_eval(r_str)
-
+            
+# CH better: make the file name an argument here rather than in the function
+# which is more consistent with how the other files are named
+#APW - I'll need help to understand
     my_map = Myfuncs.plot_map (latitude, longitude, range_10, range_20, range_30, my_map)
 
     r_list = Myfuncs.filter_list(r)
