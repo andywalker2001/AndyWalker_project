@@ -14,17 +14,10 @@ from operator import or_
 slant_range = []
 terrain_masking = []
 
-default = {
-    "live": True,
-    "range_limit": 50,
-    "latitude": 50.827276295494734,
-    "longitude": 0.2060202678627942,
-    "altitude": 50.00,
-    "frame_delay": .1
-}
+default = Myfuncs.set_location("COM5")
 
 # Create the map object
-my_map = folium.Map(location=[default["latitude"], default["longitude"]], zoom_start=7)
+my_map = folium.Map(location=[default["latitude"], default["longitude"]], zoom_start=9)
 
 range_0 = Myfuncs.calculate_radar_range(rcs_sqm=1)
 range_10 = Myfuncs.calculate_radar_range(rcs_sqm=10)
@@ -40,23 +33,21 @@ print("-" * 88)
 #=================================================
 while True:
     if (default["live"]):
-        try:
-            latitude, longitude, altitude, units = Myfuncs.read_gps_coordinates("COM6")
-        except KeyboardInterrupt:
-            print("Stopped reading GPS.")
-        except Exception as exc:
-            latitude = default["latitude"]
-            longitude=default["longitude"]
-            altitude=default["altitude"]
+        latitude = default["latitude"]
+        longitude=default["longitude"]
+        altitude=default["altitude"]
         r = Myfuncs.call_api(str(latitude), str(longitude), altitude, str(default["range_limit"]))
     else:
         with open(r"./Data/data.txt", "r", encoding="utf-8") as f:
-            r_str = f.read()
-            r = ast.literal_eval(r_str)
             latitude = default["latitude"]
             longitude=default["longitude"]
             altitude=default["altitude"]
-
+            r_str = f.read()
+            r = ast.literal_eval(r_str)
+            
+# CH better: make the file name an argument here rather than in the function
+# which is more consistent with how the other files are named
+#APW - I'll need help to understand
     my_map = Myfuncs.plot_map (latitude, longitude, range_10, range_20, range_30, my_map)
 
     r_list = Myfuncs.filter_list(r)
@@ -76,8 +67,8 @@ while True:
             {(time.time_ns() // 1_000_000):<15} ")
 
         if (reduce(or_, terrain_masking[i])):
-            Myfuncs.plot_plane (radar[0:2], plane[0:2], my_map, r_list[i], "red")
+            Myfuncs.plot_plane (radar[0:2], plane[0:2], my_map, r_list[i], "red", r_list[i].get('nav_heading', 0))
         else:
-            Myfuncs.plot_plane (radar[0:2], plane[0:2], my_map, r_list[i], "blue")
+            Myfuncs.plot_plane (radar[0:2], plane[0:2], my_map, r_list[i], "blue", r_list[i].get('nav_heading', 0))
     print("-" * 88)
     time.sleep(default["frame_delay"])

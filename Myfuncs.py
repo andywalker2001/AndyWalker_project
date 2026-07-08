@@ -1,5 +1,6 @@
 from http.client import responses
 from urllib import response
+from matplotlib import image
 import pyproj
 import requests
 import numpy as np
@@ -7,7 +8,10 @@ import serial
 import pynmea2
 import math
 import folium
+from folium.plugins import AntPath
 import geopy
+import random
+from PIL import Image
 import openmeteo_requests
 
 def calculate_slant_range(radar, plane):
@@ -208,7 +212,7 @@ def plot_map (latitude, longitude, range_10, range_20, range_30, my_map):
 
     return(my_map)
 
-def plot_plane (coord1, coord2, my_map, description, col = "blue"):
+def plot_plane (coord1, coord2, my_map, description, col = "blue", heading = 0):
     """
     Plots a line on an existing map using Folium that is the vector from the sensor to the plane
     
@@ -225,26 +229,42 @@ def plot_plane (coord1, coord2, my_map, description, col = "blue"):
     # Group the two points into a list for PolyLine
     points = [coord1, coord2]
     
+    rotate_icon(heading)  # Rotate the icon by the specified angle
+    
+    custom_icon = folium.CustomIcon(
+    icon_image=str("ac_icon_rotated.png"),  # Path to the rotated icon image
+    icon_size=(20, 20),      # Width and height of the icon in pixels
+    icon_anchor=(10, 10),    # The pixel coordinates of the image that aligns over the map coordinate
+    popup_anchor=(0, -10)    # The point from which the popup should open relative to the icon_anchor
+    )
+       
     # Create the line layer and add it to the map
-#    folium.PolyLine(
-#        locations=points,
-#        color=col,       # Line color
-#        weight=3,           # Line thickness in pixels
-#        opacity=0.8,        # Line transparency
-#        tooltip=custom_string # Hover text
-#    ).add_to(my_map)
-
-    folium.Circle(
-        location=coord2,
-        radius=20,            # Radius explicitly set in meters
-        color=col,
-        fill=True,
-        fill_color=col,
-        fill_opacity=0.3,
-        popup=custom_string # Hover text
+    folium.PolyLine(
+        locations=points,
+        color=col,       # Line color
+        weight=1,           # Line thickness in pixels
+        opacity=0.1,        # Line transparency
+        tooltip=custom_string # Hover text
     ).add_to(my_map)
 
-    my_map.save(r"./Data/interactive_map.html")
+    if heading == 0:
+        folium.Circle(
+            location=coord2,
+            radius=2,
+            popup=custom_string,
+            color=col,
+            fill=True,
+            fill_color=col,
+            fill_opacity=0.4
+        ).add_to(my_map)
+    else:
+        folium.Marker(
+            location=coord2,
+            popup=custom_string,
+            icon=custom_icon
+        ).add_to(my_map)
+
+    #my_map.save(r"./Data/interactive_map.html")
 
 def get_masking(coord1, coord2, num_segments):
     """
@@ -309,7 +329,7 @@ def get_masking(coord1, coord2, num_segments):
 def filter_list(r):
     r_list = r["ac"] #Extract the list of aircraft from the API response
 
-    keys_to_keep = {"lat", "lon", "alt_geom", "flight"} #Only keep the keys we need for plotting and range calculations
+    keys_to_keep = {"lat", "lon", "alt_geom", "flight", "nav_heading"} #Only keep the keys we need for plotting and range calculations
     filtered_r = [{k: v for k, v in d.items() if k in keys_to_keep} for d in r_list]
     really_filtered_r = [
         d for d in filtered_r #Only keep entries that have the "alt_geom" key, since we need altitude for range calculations
@@ -321,3 +341,84 @@ def filter_list(r):
         print(r_list, file=g) #Write the filtered list of aircraft to a file for debugging purposes
         
     return (r_list)
+
+def set_location(Port="COM5"):
+    """
+    Set the location parameters in the default dictionary.
+
+    """
+
+    try:
+        latitude, longitude, altitude, units = read_gps_coordinates(serial_port=Port)
+        default = {
+            "live": True,
+            "range_limit": 50,
+            "latitude": latitude,
+            "longitude": longitude,
+            "altitude": altitude,
+            "units": units,
+            "frame_delay": .1
+        }
+    except KeyboardInterrupt:
+        print("Stopped reading GPS.")
+    except Exception as exc:
+        default = {
+            "live": True,
+            "range_limit": 50,
+
+        #South of London
+        #    "latitude": 50.827276295494734,
+        #    "longitude": 0.2060202678627942,
+        #    "altitude": 50.00,
+
+        #Lake
+        #    "latitude": 47.63696438277051,
+        #    "longitude": -96.21549396801821,
+        #    "altitude": 380.00,
+
+        #Bowman Woods
+            "latitude": 42.044323003948186,
+            "longitude": -91.62728056174687,
+            "altitude": 260.00,
+    
+            "frame_delay": .1
+    }
+        
+    return (default)
+
+def rotate_icon(angle):
+    """
+    Rotates an image by a specified angle and saves the result.
+
+    Parameters:
+        angle (float): Angle in degrees to rotate the image counter-clockwise.
+    """
+    with Image.open("ac_icon.png") as img:
+        rotated_image = img.rotate(angle, expand=True)
+        rotated_image.save("ac_icon_rotated.png")
+
+def plot_vector(coord1, coord2, my_map, col = "blue"):
+    """
+    Plots a line on an existing map using Folium that is the vector from the sensor to the plane
+    
+    Parameters:
+    coord1 (float): Latitude, Longitude of the radar location
+    coord2 (float): Latitude, Longitude of the aircraft
+    
+    Returns:
+    Nothing. Updates an interactive map called "interactive_map.html".
+    """
+    # Group the two points into a list for PolyLine
+    points = [coord1, coord2]
+    
+    AntPath(
+        locations=points,
+        dash_array=[10, 20],
+        delay=1000,
+        color=col,
+        pulse_color="white",
+        weight=3,
+        opacity=0.8
+    ).add_to(my_map)
+
+
