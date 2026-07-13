@@ -1,6 +1,10 @@
 from http.client import responses
 from urllib import response
 from matplotlib import image
+from folium.plugins import AntPath
+from PIL import Image
+
+import openmeteo_requests
 import pyproj
 import requests
 import numpy as np
@@ -8,11 +12,10 @@ import serial
 import pynmea2
 import math
 import folium
-from folium.plugins import AntPath
-import geopy
-import random
-from PIL import Image
-import openmeteo_requests
+import shutil
+import ast
+
+#import geopy
 
 def calculate_slant_range(radar, plane):
     """
@@ -122,7 +125,7 @@ def calculate_radar_range(pt_watts=250, gain_db=26, num_pulses=1000, freq_hz=2.4
     
     return max_range
 
-def call_api(latitude, longitude, altitude, limit_range="27", units="M"):
+def call_api(latitude, longitude, altitude, limit_range="40", units="M"):
     """
     Pull aircraft data from the API 75 miles or less from the given GPS coordinates.
     The default location is the corner of the field by Bowman Woods in Cedar Rapids, IA
@@ -264,8 +267,6 @@ def plot_plane (coord1, coord2, my_map, description, col = "blue", heading = 0):
             icon=custom_icon
         ).add_to(my_map)
 
-    #my_map.save(r"./Data/interactive_map.html")
-
 def get_masking(coord1, coord2, num_segments):
     """
     Creates a line given 2 coordinates and divides it into "count" number of points.
@@ -337,8 +338,13 @@ def filter_list(r):
         ]
     r_list = really_filtered_r #Update r_list to only include the filtered entries
 
+    try:
+        shutil.copyfile("./Data/output.txt", "./Data/output.old")
+    except FileNotFoundError:
+        x = 0
+
     with open(r"./Data/output.txt", "w") as g:
-        print(r_list, file=g) #Write the filtered list of aircraft to a file for debugging purposes
+        print(r_list, file=g) #Write the filtered list of aircraft to a file
         
     return (r_list)
 
@@ -352,7 +358,7 @@ def set_location(Port="COM5"):
         latitude, longitude, altitude, units = read_gps_coordinates(serial_port=Port)
         default = {
             "live": True,
-            "range_limit": 50,
+            "range_limit": 30,
             "latitude": latitude,
             "longitude": longitude,
             "altitude": altitude,
@@ -364,7 +370,7 @@ def set_location(Port="COM5"):
     except Exception as exc:
         default = {
             "live": True,
-            "range_limit": 50,
+            "range_limit": 30,
 
         #South of London
         #    "latitude": 50.827276295494734,
@@ -394,31 +400,72 @@ def rotate_icon(angle):
         angle (float): Angle in degrees to rotate the image counter-clockwise.
     """
     with Image.open("ac_icon.png") as img:
-        rotated_image = img.rotate(angle, expand=True)
+        rotated_image = img.rotate((360-angle), expand=True)
         rotated_image.save("ac_icon_rotated.png")
 
-def plot_vector(coord1, coord2, my_map, col = "blue"):
+def plot_vector(my_map, col = "blue"):
     """
     Plots a line on an existing map using Folium that is the vector from the sensor to the plane
     
     Parameters:
-    coord1 (float): Latitude, Longitude of the radar location
-    coord2 (float): Latitude, Longitude of the aircraft
     
     Returns:
     Nothing. Updates an interactive map called "interactive_map.html".
     """
     # Group the two points into a list for PolyLine
-    points = [coord1, coord2]
-    
-    AntPath(
-        locations=points,
-        dash_array=[10, 20],
-        delay=1000,
-        color=col,
-        pulse_color="white",
-        weight=3,
-        opacity=0.8
-    ).add_to(my_map)
+    points = extract_matching_flights("./Data/output.old", "./Data/output.txt")
+    #list of list of tuples of lat/lon pairs
+    for item in points:
+        AntPath(
+            locations=points,
+            dash_array=[100, 100],
+            delay=500,
+            color=col,
+            pulse_color="white",
+            weight=1,
+            opacity=0.6
+        ).add_to(my_map)
 
+def extract_matching_flights(file1_path, file2_path):
+    """
+    Finds matching flights between two files and outputs a new file 
+    containing pairs of (lat, lon) coordinates for those flights.
+    
+    Parameters:
+    file1_path (str): Path to the first input file.
+    file2_path (str): Path to the second input file.
+    
+    Returns:
+    matching_pairs: A list of tuples containing matching flight coordinates.
+    """
+    # Read and safely parse the content of the first file
+    with open(file1_path, "r", encoding="utf-8") as f1:
+        data1 = ast.literal_eval(f1.read())
+
+    # Read and safely parse the content of the second file
+    with open(file2_path, "r", encoding="utf-8") as f2:
+        data2 = ast.literal_eval(f2.read())
+
+    # Map stripped flight identifiers to their coordinates for quick lookup
+    # .strip() removes trailing/leading spaces (e.g., 'SKW330Z ' -> 'SKW330Z')
+    flights1 = {
+        item["flight"].strip(): (item["lat"], item["lon"])
+        for item in data1
+        if "flight" in item and "lat" in item and "lon" in item
+    }
+
+    matching_pairs = []
+
+    # Check for matches in the second dataset
+    for item in data2:
+        if "flight" in item and "lat" in item and "lon" in item:
+            flight_id = item["flight"].strip()
+
+            # If the flight exists in both files, pair the coordinates
+            if flight_id in flights1:
+                coords1 = flights1[flight_id]
+                coords2 = (item["lat"], item["lon"])
+                matching_pairs.append([coords1, coords2])
+
+    return (matching_pairs)
 

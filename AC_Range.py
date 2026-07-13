@@ -1,9 +1,12 @@
 import Myfuncs
-import re
-import itertools
+#import re
+#import itertools
 import time
 import ast
 import folium
+
+from pathlib import Path
+from anyio import Path
 from collections import defaultdict
 from functools import reduce
 from operator import or_
@@ -38,12 +41,17 @@ while True:
         altitude=default["altitude"]
         r = Myfuncs.call_api(str(latitude), str(longitude), altitude, str(default["range_limit"]))
     else:
-        with open(r"./Data/data.txt", "r", encoding="utf-8") as f:
-            latitude = default["latitude"]
-            longitude=default["longitude"]
-            altitude=default["altitude"]
-            r_str = f.read()
-            r = ast.literal_eval(r_str)
+        try:
+            with open(r"./Data/data.txt", "r", encoding="utf-8") as f:
+                latitude = default["latitude"]
+                longitude=default["longitude"]
+                altitude=default["altitude"]
+                r_str = f.read()
+                r = ast.literal_eval(r_str)
+        except Exception as e:
+            print(f"Error reading data file: {e}")
+            Path("./Data/data.txt").touch()
+            r = []
             
 # CH better: make the file name an argument here rather than in the function
 # which is more consistent with how the other files are named
@@ -67,8 +75,11 @@ while True:
             {(time.time_ns() // 1_000_000):<15} ")
 
         if (reduce(or_, terrain_masking[i])):
+            print(r_list[i].get('nav_heading', 0))
             Myfuncs.plot_plane (radar[0:2], plane[0:2], my_map, r_list[i], "red", r_list[i].get('nav_heading', 0))
         else:
+            print(r_list[i].get('nav_heading', 0))
             Myfuncs.plot_plane (radar[0:2], plane[0:2], my_map, r_list[i], "blue", r_list[i].get('nav_heading', 0))
+    Myfuncs.plot_vector(my_map)
     print("-" * 88)
     time.sleep(default["frame_delay"])
