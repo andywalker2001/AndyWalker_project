@@ -1,0 +1,196 @@
+CHANGE LOG — 2026-07-08
+======================================================================================
+
+DATA DISPLAY SCRIPTS
+--------------------------------------------------------------------------------------
+NEW: Data/print_data.py
+NEW: Data/print_output.py
+  Created two scripts to print data.txt and output.txt in a human-readable column
+  format. Needed for debugging — the raw files are single-line Python dict strings
+  that are unreadable without formatting.
+
+
+AIRPLANE SYMBOL ROTATION (Myfuncs.py — plot_plane / rotate_icon)
+--------------------------------------------------------------------------------------
+BUG FIX 1: PIL rotates counter-clockwise; aviation headings are clockwise.
+  img.rotate(angle) was rotating icons in the wrong direction. Fixed by negating
+  the angle: img.rotate(-angle).
+
+BUG FIX 2: All aircraft shared a single rotated icon file (ac_icon_rotated.png).
+  Each call to plot_plane overwrote the same file, so all Folium markers in the
+  rendered HTML showed the last aircraft's heading. Fixed by returning a base64
+  data URL from rotate_icon so each marker embedded its own unique image.
+
+BUG FIX 3: Base icon (ac_icon.png) points NE (~45°), not North.
+  The rotation formula img.rotate(-angle) assumed the base icon pointed North,
+  causing a 45° offset error. Fixed with img.rotate(45 - angle).
+
+REFACTOR: Replaced PIL/base64 approach with CSS DivIcon.
+  The base64 PNG strings caused Jinja2 to hang during my_map.save() because it had
+  to compile very large template strings. Replaced with a folium.DivIcon using the
+  ✈ Unicode character and CSS transform:rotate(). This is instantaneous, requires no
+  file I/O or image processing, and correctly respects the color parameter.
+  Rotation formula for CSS (also clockwise): rotate(nav_heading - 45)deg.
+
+
+HEADING SOURCE FOR ROTATION
+--------------------------------------------------------------------------------------
+CHANGE: Added 'track' to filter_list keys and popup.
+  track (actual GPS ground track) was added to the filtered aircraft data so it
+  appears in popups for comparison with nav_heading.
+
+Question: why not use track if it's actually measured and accounts for say cross-
+  wind?
+
+CHANGE: Switched rotation from track back to nav_heading, with fallback to dot.
+  nav_heading is the autopilot-selected heading, which is more stable than track.
+  If nav_heading is absent (not all aircraft broadcast it), heading defaults to 0,
+  which triggers the existing dot-drawing branch in plot_plane instead of an icon.
+  Applied to AC_Range.py, app.py, and streamlit_app.py.
+
+
+POPUP AND TERMINAL IMPROVEMENTS
+--------------------------------------------------------------------------------------
+CHANGE: Added UTC timestamp to aircraft popups (AC_Range.py, app.py, streamlit_app.py).
+  r["now"] from the API response is milliseconds since epoch. Converted to a
+  human-readable "%Y-%m-%d %H:%M:%S UTC" string and injected into each aircraft
+  dict before plot_plane is called, so it appears in every popup.
+
+Note: If this is too wide in the pop-up we could drop the date part
+
+CHANGE: Reformatted terminal "Received Time" column from raw ms to HH:MM:SS.mmm UTC.
+  Raw milliseconds since epoch are not readable at a glance.
+
+CHANGE: Added 2D surface distance column to terminal output.
+  calculate_slant_range already computed the geodesic surface distance (no altitude)
+  internally but discarded it. Added it as index [3] in the return value and printed
+  as a new "2D Range (km)" column. The difference between slant range and 2D range
+  shows how much altitude contributes to the measured distance.
+
+TERRAIN MASKING OPTIMIZATION (AC_Range.py / Myfuncs.py)
+--------------------------------------------------------------------------------------
+IMPROVEMENT: Adaptive segment count based on 2D distance.
+  get_masking previously used a hardcoded 5 segments regardless of path length.
+  For a 100 km path that means one sample every 20 km, missing terrain features.
+  For a 2 km path, 5 samples is wasteful. OpenMeteo returns ~1 km² resolution
+  terrain data, so one sample per km is the optimal density. The segment count is
+  now computed as max(1, int(distance_km)) using the 2D surface distance from
+  calculate_slant_range[3]. All points are still sent in a single HTTP request to
+  OpenMeteo, so there is no extra latency.
+
+
+
+app.py FIXES
+--------------------------------------------------------------------------------------
+BUG FIX: plot_map called without my_map argument — caused TypeError on Update.
+  Added folium.Map() creation and passed it to plot_map.
+
+BUG FIX: /update route did not plot aircraft at all.
+  Clicking Update Map only redrew range circles; existing aircraft symbols were
+  wiped. Added full aircraft pipeline: call_api / file read, filter_list, timestamp
+  injection, and plot_plane with nav_heading.
+
+BUG FIX: get_masking() calls blocked the Flask response.
+  get_masking makes one OpenMeteo API call per path segment per aircraft. With many
+  aircraft this caused the /update route to hang for tens of seconds. Removed
+  terrain masking from the web route; all aircraft are drawn blue. Terrain masking
+  only runs in AC_Range.py where it has time budget in the background loop.
+
+BUG FIX: map saved before aircraft were plotted.
+  plot_map calls my_map.save() internally, before any plot_plane calls. Added an
+  explicit my_map.save(MAP_PATH) at the end of the update route so the file on disk
+  includes aircraft symbols.
+
+
+streamlit_app.py FIXES
+--------------------------------------------------------------------------------------
+BUG FIX: set_location("COM5") called on every Streamlit rerender.
+  Streamlit re-executes the entire script on every widget interaction. set_location
+  attempts to read a serial GPS port (up to 50 × 1s timeouts). Wrapped with
+  @st.cache_resource so it runs only once per session.
+
+BUG FIX: get_masking() called for each aircraft during Update (same as app.py).
+  Removed for the same reason — too slow for an interactive web request.
+
+BUG FIX: plot_map called without my_map argument — caused TypeError on Update.
+  Added folium.Map() creation and passed it to plot_map.
+
+BUG FIX: plot_plane called without heading argument.
+  All aircraft were drawn as dots (heading=0 branch). Added nav_heading as the
+  heading argument.
+
+BUG FIX: map saved before aircraft were plotted (same as app.py).
+  Added my_map.save(str(MAP_PATH)) at the end of generate_map() after all
+  plot_plane calls.
+
+BUG FIX: st.iframe / st.components.v1.html confusion.
+  In this version of Streamlit, st.iframe is the current API and
+  st.components.v1.html is deprecated. Settled on st.iframe.
+
+
+Myfuncs.py — set_location DEFAULT
+--------------------------------------------------------------------------------------
+CHANGE: live defaults to False when GPS is unavailable.
+  When COM5 is not connected, the fallback hardcoded location is used. Defaulting
+  live=True in that case would immediately try to call the paid API with potentially
+  wrong coordinates. Changed to live=False so the UI starts in safe file-based mode.
+
+
+AC_Range.py — MAP ACCUMULATION BUG
+--------------------------------------------------------------------------------------
+BUG FIX: folium.Map created once outside the loop — grew unbounded.
+  Each loop iteration added new range circles and aircraft markers to the same map
+  object. After many iterations the HTML became enormous and Jinja2 hung during
+  my_map.save(). Fixed by creating a fresh folium.Map at the start of each loop
+  iteration.
+
+BUG FIX: map saved before aircraft were plotted (same as app.py / streamlit_app.py).
+  Added my_map.save() after all plot_plane calls so the file includes aircraft.
+
+
+app_threaded.py — BACKGROUND TERRAIN MASKING (NEW FILE)
+--------------------------------------------------------------------------------------
+NEW: app_threaded.py (copy of app.py with background masking)
+  Created an enhanced version of app.py that performs terrain masking in the
+  background without blocking the /update response.
+
+ARCHITECTURE: Two-phase map update for instant UI response.
+  Phase 1 (immediate): Draws all aircraft in blue and saves the map. The /update
+  route returns in ~1 second, so the browser sees aircraft appear instantly.
+  
+  Phase 2 (background): A daemon thread runs after the response is sent. It:
+    - Calls get_masking() for each aircraft in parallel using ThreadPoolExecutor
+    - Waits only for the slowest API call instead of running them sequentially
+    - Redraws the map with red (terrain-masked) / blue (clear) colors
+    - Saves the updated map file
+  
+  The browser's existing /map_ts polling (every 5 seconds) detects the file
+  timestamp change and automatically reloads the map. The user sees aircraft
+  recolor from blue to red/blue a few seconds after Update completes.
+
+NEW GLOBAL: _map_lock (threading.Lock)
+  Prevents race conditions if the user clicks Update again while a background
+  masking thread is still writing the map file.
+
+NEW GLOBAL: _masking_status dict
+  Tracks whether background masking is running and when it last completed.
+  Allows the UI to show optional status indicators.
+
+NEW ENDPOINT: /masking_status
+  Returns {"running": true/false, "last": "HH:MM:SS UTC"} so the frontend can
+  display a "masking in progress..." message if desired.
+
+NEW FUNCTION: _apply_masking_background()
+  The background worker function that runs in a daemon thread. Uses
+  ThreadPoolExecutor to parallelize get_masking() calls across all aircraft,
+  dramatically reducing latency compared to sequential execution.
+
+KEY DIFFERENCES from app.py:
+  1. app.py skips terrain masking entirely (all aircraft blue) for speed
+  2. app_threaded.py returns instantly with blue aircraft, then recolors in the
+     background with actual masking results
+  3. Masking API calls run in parallel instead of sequentially
+  4. User never waits — the UI is always responsive
+  5. Requires threading support (daemon threads, locks) not present in app.py
+
+
